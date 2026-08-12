@@ -1,0 +1,1381 @@
+{
+  "info": {
+    "name": "ARMoS Tools 2.0 API",
+    "description": "# ARMoS Tools 2.0 — API Collection (PRD)\n\nDokumentasi endpoint sesuai **PRD_ARMOS_TOOLS_2.0.md**.\n\n## Kontrak response\n```json\n{ \"status\": 200, \"message\": \"...\", \"data\": [], \"stub\": true }\n```\nError: `status` 400/500 + `message`.\n\n## Auth\nSemua `/api/*` wajib **session cookie** setelah login.\n1. Buka `GET /login` di browser (atau request ini) → hitung captcha\n2. `POST /login` dengan `nama`, `password`, `captcha`, `_token`\n3. Simpan cookie session untuk request API berikutnya\n4. Sertakan header `X-CSRF-TOKEN` untuk POST\n\n## Seed login lokal\n- nama: `admin`\n- password: `password`\n\n## Status implementasi\nEndpoint saat ini mengembalikan **stub JSON** (`stub: true`) — kontrak & validasi request sudah ada; koneksi TMS DB / external API menyusul per fase PRD.\n\n## Base URL default\n`http://amors-tools.nuradigital.test`\n",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://amors-tools.nuradigital.test"
+    },
+    {
+      "key": "csrfToken",
+      "value": ""
+    },
+    {
+      "key": "captchaAnswer",
+      "value": ""
+    },
+    {
+      "key": "jobId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "00 — Auth (Session)",
+      "description": "Login form berbasis session cookie (bukan JSON API utama). Captcha perkalian + auth tabel tools_user (field `nama`).",
+      "item": [
+        {
+          "name": "GET Login Form (generate captcha)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "login"
+              ]
+            },
+            "description": "Menampilkan form login + generate soal captcha `a × b` ke session."
+          },
+          "response": []
+        },
+        {
+          "name": "POST Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "nama",
+                  "value": "admin"
+                },
+                {
+                  "key": "password",
+                  "value": "password"
+                },
+                {
+                  "key": "captcha",
+                  "value": "{{captchaAnswer}}",
+                  "description": "Isi hasil perkalian dari halaman login"
+                },
+                {
+                  "key": "_token",
+                  "value": "{{csrfToken}}"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "login"
+              ]
+            },
+            "description": "Validasi captcha lalu Auth::attempt(['nama','password']) ke tabel tools_user. Sukses → redirect `/`."
+          },
+          "response": []
+        },
+        {
+          "name": "POST Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "_token",
+                  "value": "{{csrfToken}}"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "logout"
+              ]
+            },
+            "description": "Logout, invalidate session, redirect /login."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "01 — Update Lokasi Customer",
+      "description": "DB: DATABASE_MAIN.\nCari order by faktur/warehouse, pilih lokasi child, update `order.customer_id`.\nWrite: UPDATE \"order\" SET customer_id = ? WHERE faktur_id = ?",
+      "item": [
+        {
+          "name": "GET Orders",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders?faktur_id=INV-001&warehouse_id=WH01",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders"
+              ],
+              "query": [
+                {
+                  "key": "faktur_id",
+                  "value": "INV-001"
+                },
+                {
+                  "key": "warehouse_id",
+                  "value": "WH01"
+                }
+              ]
+            },
+            "description": "Isi tabel order di UI. Query: faktur_id (wajib), warehouse_id (opsional)."
+          },
+          "response": []
+        },
+        {
+          "name": "GET Locations",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/locations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "locations"
+              ]
+            },
+            "description": "Isi Select2 modal lokasi (mst_location_child)."
+          },
+          "response": []
+        },
+        {
+          "name": "POST Update Location",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/update-location",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "update-location"
+              ]
+            },
+            "description": "Simpan lokasi baru ke order.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"faktur_id\": \"INV-001\",\n  \"customer_id\": 56\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02 — Uncheck Reconciliation",
+      "description": "DB: MAIN.\nHapus baris order_document_reconciliation.\nWrite: DELETE FROM order_document_reconciliation WHERE order_id = ?",
+      "item": [
+        {
+          "name": "GET Reconciliation",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/reconciliation?faktur_id=INV-001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "reconciliation"
+              ],
+              "query": [
+                {
+                  "key": "faktur_id",
+                  "value": "INV-001"
+                }
+              ]
+            },
+            "description": "Tabel recon by faktur_id."
+          },
+          "response": []
+        },
+        {
+          "name": "POST Uncheck",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/reconciliation/uncheck",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "reconciliation",
+                "uncheck"
+              ]
+            },
+            "description": "Uncheck / hapus recon untuk order_id.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": 1001\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "03 — Log Viewer",
+      "description": "Sumber: SQLite lokal data_log/{DDMMYYYY}/{slug}.db (bukan DB TMS).\nTidak ada external HTTP.",
+      "item": [
+        {
+          "name": "GET Folders",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/log/folders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "log",
+                "folders"
+              ]
+            },
+            "description": "Dropdown folder tanggal."
+          },
+          "response": []
+        },
+        {
+          "name": "GET Events",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/log/events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "log",
+                "events"
+              ]
+            },
+            "description": "Dropdown event + config filter."
+          },
+          "response": []
+        },
+        {
+          "name": "GET Search",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/log/search?folder=11082026&event=feed-order&page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "log",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "folder",
+                  "value": "11082026"
+                },
+                {
+                  "key": "event",
+                  "value": "feed-order"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Tabel log + pagination."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "04 — Product To Route",
+      "description": "DB: MAIN (read-only). Cari relasi SKU ke route/order/qty by date range.",
+      "item": [
+        {
+          "name": "GET Product To Route",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/product-to-route?sku=SKU-001&start_date=2026-08-01&end_date=2026-08-11",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "product-to-route"
+              ],
+              "query": [
+                {
+                  "key": "sku",
+                  "value": "SKU-001"
+                },
+                {
+                  "key": "start_date",
+                  "value": "2026-08-01"
+                },
+                {
+                  "key": "end_date",
+                  "value": "2026-08-11"
+                }
+              ]
+            },
+            "description": "Tabel hasil route/order/qty."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "05 — Update WMS Integrasi",
+      "description": "DB: MAIN.\nWrite: UPDATE \"order\" SET order_integration_id = ? WHERE order_id = ?",
+      "item": [
+        {
+          "name": "GET WMS Integration",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/wms-integration?faktur_id=INV-001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "wms-integration"
+              ],
+              "query": [
+                {
+                  "key": "faktur_id",
+                  "value": "INV-001"
+                }
+              ]
+            },
+            "description": "Tabel order by faktur."
+          },
+          "response": []
+        },
+        {
+          "name": "POST Update Integration Id",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/wms-integration/update",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "wms-integration",
+                "update"
+              ]
+            },
+            "description": "Simpan order_integration_id.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": 1001,\n  \"order_integration_id\": \"WMS-NEW-99\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "06 — Convert & Send (Preprod)",
+      "description": "Upload Excel (sheet: order_data, order_detail) → convert JSON → POST AUTH_URL → POST FEED_ORDER_URL per order.\nExternal: AUTH_URL, FEED_ORDER_URL, SEND_ORDER_USERNAME/PASSWORD.",
+      "item": [
+        {
+          "name": "POST Convert & Send",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/convert-send",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "convert-send"
+              ]
+            },
+            "description": "multipart field `file` (.xlsx). Response: steps[], converted_json.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [],
+                  "description": "Excel .xlsx"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "07 — Sync Manager",
+      "description": "ETL DB_A (source) → DB_B (warehouse). sync_type: fact_order | fact_delivery | both.\nTarget write: tms_fact_order, tms_fact_delivery, tms_sync_log.",
+      "item": [
+        {
+          "name": "POST Sync Run",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sync/run",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sync",
+                "run"
+              ]
+            },
+            "description": "Mulai job sync. Response: job_id.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sync_type\": \"fact_order\",\n  \"date_from\": \"2026-08-01\",\n  \"date_to\": \"2026-08-11\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET Sync Job",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sync/job/{{jobId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sync",
+                "job",
+                "{{jobId}}"
+              ]
+            },
+            "description": "Poll status job (in-progress/done/fail)."
+          },
+          "response": []
+        },
+        {
+          "name": "GET Sync Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sync/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sync",
+                "status"
+              ]
+            },
+            "description": "Dashboard + history tms_sync_log."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "08 — Update Qty Unloading",
+      "description": "DB: MAIN.\nWrite: UPDATE order_detail SET quantity_unloading = ? WHERE order_detail_id = ?",
+      "item": [
+        {
+          "name": "GET Find",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/qty-unloading/find?warehouse_id=WH01&faktur_id=INV-001&sku=SKU-001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "qty-unloading",
+                "find"
+              ],
+              "query": [
+                {
+                  "key": "warehouse_id",
+                  "value": "WH01"
+                },
+                {
+                  "key": "faktur_id",
+                  "value": "INV-001"
+                },
+                {
+                  "key": "sku",
+                  "value": "SKU-001"
+                }
+              ]
+            },
+            "description": "Cari baris order_detail."
+          },
+          "response": []
+        },
+        {
+          "name": "POST Update",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/qty-unloading/update",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "qty-unloading",
+                "update"
+              ]
+            },
+            "description": "Simpan quantity_unloading.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_detail_id\": 9001,\n  \"quantity_unloading\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "09 — Hapus Driver Cost",
+      "description": "DB: MAIN.\nWrite: DELETE FROM order_cost WHERE order_cost_id = ?",
+      "item": [
+        {
+          "name": "GET List",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/driver-cost/list?manifest_reference=MNF-001&page=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "driver-cost",
+                "list"
+              ],
+              "query": [
+                {
+                  "key": "manifest_reference",
+                  "value": "MNF-001"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Tabel cost + pagination by manifest_reference."
+          },
+          "response": []
+        },
+        {
+          "name": "POST Delete",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/driver-cost/delete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "driver-cost",
+                "delete"
+              ]
+            },
+            "description": "Hapus order_cost.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_cost_id\": 501\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "10 — Import Lokasi",
+      "description": "DB: PREPROD atau PROD (pilihan UI).\nWrite: insert mst_location_parent / mst_location_child (skip jika sudah ada).",
+      "item": [
+        {
+          "name": "POST Import",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/import-lokasi",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "import-lokasi"
+              ]
+            },
+            "description": "multipart: file + env=preprod|prod. Response: messages + log_data_filename.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "env",
+                  "type": "text",
+                  "value": "preprod"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET Download Log",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/import-lokasi/download-log?filename=import_lokasi_log_stub.xlsx",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "import-lokasi",
+                "download-log"
+              ],
+              "query": [
+                {
+                  "key": "filename",
+                  "value": "import_lokasi_log_stub.xlsx"
+                }
+              ]
+            },
+            "description": "Download Excel log proses."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "11 — Check Order Status",
+      "description": "DB: MAIN (read-only). List order, detail, dan product vs inventory (Full Fill / Not Full Fill).",
+      "item": [
+        {
+          "name": "GET Orders",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/check-order-status/orders?faktur_id=INV-001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "check-order-status",
+                "orders"
+              ],
+              "query": [
+                {
+                  "key": "faktur_id",
+                  "value": "INV-001"
+                }
+              ]
+            },
+            "description": "Tabel LIST Order (+ username created/updated)."
+          },
+          "response": []
+        },
+        {
+          "name": "GET Order Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/check-order-status/order-details?order_id=1001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "check-order-status",
+                "order-details"
+              ],
+              "query": [
+                {
+                  "key": "order_id",
+                  "value": "1001"
+                }
+              ]
+            },
+            "description": "Tabel detail by order_id."
+          },
+          "response": []
+        },
+        {
+          "name": "GET Product vs Inventory",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/check-order-status/product-vs-inventory?faktur_id=INV-001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "check-order-status",
+                "product-vs-inventory"
+              ],
+              "query": [
+                {
+                  "key": "faktur_id",
+                  "value": "INV-001"
+                }
+              ]
+            },
+            "description": "Tab inventory fulfillment."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "12 — Ubah Order Data",
+      "description": "DB: PREPROD / PROD.\nStatus valid: new, loading, ready_to_deliver, in_delivery, completed, skip, rejected, hold, failed, return_to_wms, inactive, in_optimization.\nAudit: updated_date, updated_by = nama user login.",
+      "item": [
+        {
+          "name": "GET Search",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/ubah-order-status/search?env=preprod&order_number=SO-001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "ubah-order-status",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "env",
+                  "value": "preprod"
+                },
+                {
+                  "key": "order_number",
+                  "value": "SO-001"
+                }
+              ]
+            },
+            "description": "Cari order untuk form edit."
+          },
+          "response": []
+        },
+        {
+          "name": "POST Update",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/ubah-order-data/update",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "ubah-order-data",
+                "update"
+              ]
+            },
+            "description": "Simpan status / order_integration_id / delivery_date.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"env\": \"preprod\",\n  \"order_id\": 1001,\n  \"status\": \"hold\",\n  \"order_integration_id\": \"INT-1\",\n  \"delivery_date\": \"2026-08-12\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "13 — Export Data CSV",
+      "description": "DB: PREPROD / PROD.\nType: dataproduct, datavehicle, lovconfig, masterlocation, childlocation.",
+      "item": [
+        {
+          "name": "POST Generate",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/export-data-csv/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "export-data-csv",
+                "generate"
+              ]
+            },
+            "description": "Generate file CSV. Response: filename.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"env\": \"preprod\",\n  \"type\": \"dataproduct\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET Download",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/export-data-csv/download?filename=dataproduct_preprod_stub.csv",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "export-data-csv",
+                "download"
+              ],
+              "query": [
+                {
+                  "key": "filename",
+                  "value": "dataproduct_preprod_stub.csv"
+                }
+              ]
+            },
+            "description": "Download CSV by filename."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "14 — Update Order On Route",
+      "description": "DB: PREPROD / PROD.\nUpdate tabel `route` (bukan order).\nStatus route valid: new, loading, ready_to_deliver, in_delivery, delivery_success, delivery_completed, rejected.",
+      "item": [
+        {
+          "name": "GET Search",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/update-order-on-route/search?env=preprod&manifest_reference=MNF-001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "update-order-on-route",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "env",
+                  "value": "preprod"
+                },
+                {
+                  "key": "manifest_reference",
+                  "value": "MNF-001"
+                }
+              ]
+            },
+            "description": "Tabel order + route fields by manifest."
+          },
+          "response": []
+        },
+        {
+          "name": "POST Update Route",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-TOKEN",
+                "value": "{{csrfToken}}",
+                "description": "Ambil dari cookie XSRF-TOKEN / meta setelah login"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/update-order-on-route/update",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "update-order-on-route",
+                "update"
+              ]
+            },
+            "description": "Update status / manifest_integration_id pada tabel route.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"env\": \"preprod\",\n  \"manifest_reference\": \"MNF-001\",\n  \"status\": \"in_delivery\",\n  \"manifest_integration_id\": \"RT-INT-1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

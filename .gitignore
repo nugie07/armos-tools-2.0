@@ -5,6 +5,11 @@
 /public/storage
 /storage/*.key
 /storage/pail
+/storage/logs
+/storage/framework/cache
+/storage/framework/sessions
+/storage/framework/testing
+/storage/framework/views
 /vendor
 .env
 .env.backup
@@ -21,3 +26,5 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
+bootstrap/cache/*.php
+!bootstrap/cache/.gitignore

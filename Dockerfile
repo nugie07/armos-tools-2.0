@@ -25,6 +25,9 @@ RUN printf '%s\n' \
         'opcache.memory_consumption=192' \
     > /usr/local/etc/php/conf.d/app.ini
 
+# Sets HTTPS=on so Laravel generates https:// URLs behind the host's TLS proxy.
+COPY Caddyfile /etc/caddy/Caddyfile
+
 WORKDIR /app
 
 COPY composer.json composer.lock ./

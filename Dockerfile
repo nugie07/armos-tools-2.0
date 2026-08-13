@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-
 # ---- Stage 1: build frontend assets (Vite + Tailwind) ----
 FROM node:20-alpine AS assets
 WORKDIR /app
@@ -12,6 +10,7 @@ RUN npm run build
 # ---- Stage 2: application ----
 FROM dunglas/frankenphp:php8.3-alpine
 
+COPY --from=composer/composer:2-bin /composer /usr/bin/composer
 
 RUN install-php-extensions pdo_pgsql gd zip intl bcmath pcntl opcache
 

@@ -1,0 +1,28 @@
+services:
+    app:
+        build: .
+        image: armos-tools:latest
+        container_name: armos-tools
+        restart: unless-stopped
+
+        env_file: .env
+        ports:
+            - "${APP_PORT:-8080}:80"
+        volumes:
+            - ./storage/app/data_log:/app/storage/app/data_log
+            - ./storage/app/private:/app/storage/app/private
+            - ./storage/app/public:/app/storage/app/public
+            - ./storage/logs:/app/storage/logs
+
+        healthcheck:
+            test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/up >/dev/null 2>&1 || exit 1"]
+            interval: 30s
+            timeout: 5s
+            start_period: 20s
+            retries: 3
+
+        logging:
+            driver: json-file
+            options:
+                max-size: "10m"
+                max-file: "3"

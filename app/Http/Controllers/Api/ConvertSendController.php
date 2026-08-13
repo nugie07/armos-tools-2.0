@@ -21,7 +21,13 @@ class ConvertSendController extends Controller
         try {
             $result = $this->service->handle($request->file('file'));
 
-            return $this->ok($result['converted_json'] ?? null, 'Convert & send selesai', [
+            $ok = (int) ($result['sent_ok'] ?? 0);
+            $fail = (int) ($result['sent_fail'] ?? 0);
+            $message = isset($result['sent_ok'])
+                ? "Selesai kirim. Berhasil: {$ok}, Gagal: {$fail}"
+                : 'Convert selesai (pengiriman dilewati).';
+
+            return $this->ok($result['converted_json'] ?? null, $message, [
                 'steps' => $result['steps'] ?? [],
                 'converted_json' => $result['converted_json'] ?? null,
             ]);

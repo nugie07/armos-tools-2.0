@@ -38,7 +38,7 @@
     </div>
 
     <div class="alert alert-info mt-3 mb-0">
-      File yang diupload akan dinamai ulang menjadi <code>template_feed_order.xlsx</code> sebelum dikonversi.
+      File harus berisi sheet <code>order_data</code> dan <code>order_detail</code> (relasi <code>order_data.id</code> = <code>order_detail.order_data_id</code>). Hasil konversi tampil di textarea, lalu tiap order dikirim ke feed API.
     </div>
   </div>
 </div>

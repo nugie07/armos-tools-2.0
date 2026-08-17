@@ -67,10 +67,17 @@ Route::middleware('auth')->group(function () {
         Route::get('/reconciliation', [ReconciliationController::class, 'index']);
         Route::post('/reconciliation/uncheck', [ReconciliationController::class, 'uncheck']);
 
-        // Menu 3 — Log Viewer (§3)
-        Route::get('/log/folders', [LogViewerController::class, 'folders']);
+        // Menu 3 — Log Viewer (monitoring index + production detail)
+        Route::get('/logs/events', [LogViewerController::class, 'events']);
+        Route::get('/logs', [LogViewerController::class, 'index']);
+        Route::get('/logs/sync-status', [LogViewerController::class, 'syncStatus']);
+        Route::post('/logs/sync', [LogViewerController::class, 'sync']);
+        Route::get('/logs/{apiRequestLogId}', [LogViewerController::class, 'show'])
+            ->whereNumber('apiRequestLogId');
+
+        // Backward-compatible aliases
         Route::get('/log/events', [LogViewerController::class, 'events']);
-        Route::get('/log/search', [LogViewerController::class, 'search']);
+        Route::get('/log/search', [LogViewerController::class, 'index']);
 
         // Menu 4 — Product To Route (§4)
         Route::get('/product-to-route', [ProductToRouteController::class, 'index']);

@@ -7,7 +7,9 @@
 @push('styles')
 <style>
   .monospace { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; }
-  textarea.monospace { height: 200px; }
+  textarea.monospace { height: 220px; }
+  #tblLogs tbody tr { cursor: pointer; }
+  #tblLogs tbody tr.active { background: #e8f4ff; }
   #loadingOverlay {
     position: fixed; top: 0; left: 0; width: 100%; height: 100%;
     background: rgba(255,255,255,0.85); display: flex; align-items: center; justify-content: center;
@@ -25,18 +27,19 @@
   </div>
 </div>
 
+<div class="card card-outline card-secondary mb-3">
+  <div class="card-body py-3">
+    <div class="d-flex flex-wrap align-items-center justify-content-between">
+      <div class="small text-muted" id="syncStatusText">Memuat status sync...</div>
+      <button id="btnSync" type="button" class="btn btn-outline-primary btn-sm" disabled>Sync Now</button>
+    </div>
+  </div>
+</div>
+
 <div class="card card-outline card-primary">
   <div class="card-body">
     <div class="row">
-      <div class="col-md-4">
-        <div class="form-group">
-          <label for="ddlFolder">Pilih Folder (Tanggal)</label>
-          <select id="ddlFolder" class="form-control">
-            <option value="">-- Pilih folder tanggal --</option>
-          </select>
-        </div>
-      </div>
-      <div class="col-md-4">
+      <div class="col-md-3">
         <div class="form-group">
           <label for="ddlEvent">Pilih Event</label>
           <select id="ddlEvent" class="form-control">
@@ -44,15 +47,31 @@
           </select>
         </div>
       </div>
-      <div class="col-md-4">
+      <div class="col-md-3">
         <div class="form-group">
-          <label for="searchRequest" id="lblRequest">Cari Request (opsional)</label>
-          <input id="searchRequest" type="text" class="form-control" placeholder="Masukan Request">
+          <label for="searchRequest" id="lblRequest">Reference</label>
+          <input id="searchRequest" type="text" class="form-control" placeholder="Exact match" disabled>
+        </div>
+      </div>
+      <div class="col-md-2">
+        <div class="form-group">
+          <label for="dateFrom">Dari tanggal</label>
+          <input id="dateFrom" type="date" class="form-control">
+        </div>
+      </div>
+      <div class="col-md-2">
+        <div class="form-group">
+          <label for="dateTo">Sampai tanggal</label>
+          <input id="dateTo" type="date" class="form-control">
+        </div>
+      </div>
+      <div class="col-md-2 d-flex align-items-end">
+        <div class="form-group w-100">
+          <button id="btnSearch" type="button" class="btn btn-primary btn-block" disabled>Search</button>
         </div>
       </div>
     </div>
-    <button id="btnSearch" type="button" class="btn btn-primary" disabled>Search</button>
-    <small class="text-muted d-block mt-2">Pilih folder tanggal dan event, lalu klik Search. Double klik baris untuk melihat detail.</small>
+    <small class="text-muted">Listing dari monitoring index. Double-klik baris untuk load detail (request/response) dari production by ID.</small>
   </div>
 </div>
 
@@ -63,6 +82,7 @@
         <tr>
           <th>api_request_log_id</th>
           <th>event</th>
+          <th>reference</th>
           <th>created_date</th>
         </tr>
       </thead>
@@ -70,9 +90,8 @@
     </table>
   </div>
   <div class="card-footer d-flex align-items-center">
-    <button id="prevPage" type="button" class="btn btn-outline-secondary btn-sm">Prev</button>
-    <span id="pageInfo" class="small text-muted mx-2">Page 1/1</span>
-    <button id="nextPage" type="button" class="btn btn-outline-secondary btn-sm" disabled>Next</button>
+    <button id="btnMore" type="button" class="btn btn-outline-secondary btn-sm" disabled>Load more</button>
+    <span id="pageInfo" class="small text-muted mx-2"></span>
   </div>
 </div>
 
@@ -112,67 +131,54 @@
 @push('scripts')
 <script>
 (function () {
+  const csrf = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
   const loadingOverlay = document.getElementById('loadingOverlay');
-  const ddlFolder = document.getElementById('ddlFolder');
   const ddlEvent = document.getElementById('ddlEvent');
   const searchRequest = document.getElementById('searchRequest');
   const lblRequest = document.getElementById('lblRequest');
+  const dateFrom = document.getElementById('dateFrom');
+  const dateTo = document.getElementById('dateTo');
   const btnSearch = document.getElementById('btnSearch');
+  const btnMore = document.getElementById('btnMore');
+  const btnSync = document.getElementById('btnSync');
+  const syncStatusText = document.getElementById('syncStatusText');
   const tblBody = document.querySelector('#tblLogs tbody');
+  const pageInfo = document.getElementById('pageInfo');
   const detailEvent = document.getElementById('detailEvent');
   const detailCreated = document.getElementById('detailCreated');
   const detailRequest = document.getElementById('detailRequest');
   const detailResponse = document.getElementById('detailResponse');
 
   let eventOptions = [];
-  let currentData = [];
-  let selectedRecordId = null;
-  let currentPage = 1;
-  let totalPages = 1;
+  let nextCursor = null;
   let hasMore = false;
-  let searchField = null;
-  const PER_PAGE = 15;
-  const SEARCH_TIMEOUT_MS = 90000;
+  let rowsLoaded = 0;
 
-  function setLoading(on) {
-    loadingOverlay.classList.toggle('d-none', !on);
-  }
+  function setLoading(on) { loadingOverlay.classList.toggle('d-none', !on); }
 
   function updateRequestField() {
-    const slug = ddlEvent.value;
-    const opt = eventOptions.find(o => o.slug === slug);
-    if (opt && opt.request_config) {
+    const opt = eventOptions.find(o => o.slug === ddlEvent.value);
+    if (opt && opt.request_config && opt.request_config.search_field) {
       const c = opt.request_config;
       searchRequest.disabled = false;
-      lblRequest.textContent = (c.label || 'Cari Request') + ' (opsional)';
-      searchRequest.placeholder = c.placeholder || 'Masukan Request';
-      searchField = c.search_field || null;
+      lblRequest.textContent = c.label || 'Reference';
+      searchRequest.placeholder = c.placeholder || 'Exact match';
     } else {
       searchRequest.disabled = true;
       searchRequest.value = '';
-      lblRequest.textContent = 'Cari Request (opsional)';
-      searchRequest.placeholder = 'Masukan Request';
-      searchField = null;
+      lblRequest.textContent = 'Reference (tidak tersedia)';
+      searchRequest.placeholder = '';
     }
   }
 
   function updateSearchButton() {
-    btnSearch.disabled = !ddlFolder.value || !ddlEvent.value;
+    btnSearch.disabled = !ddlEvent.value;
   }
 
-  function renderFolderOptions(folders) {
-    ddlFolder.innerHTML = '<option value="">-- Pilih folder tanggal --</option>';
-    (folders || []).forEach(f => {
-      const name = typeof f === 'string' ? f : (f.folder || f.label || '');
-      const opt = document.createElement('option');
-      opt.value = name;
-      opt.textContent = name;
-      ddlFolder.appendChild(opt);
-    });
-  }
-
-  function renderEventOptions(events) {
-    eventOptions = events || [];
+  async function loadEvents() {
+    const res = await fetch('/api/logs/events', { headers: { 'Accept': 'application/json' } });
+    const json = await res.json();
+    eventOptions = json.data || [];
     ddlEvent.innerHTML = '<option value="">-- Pilih event --</option>';
     eventOptions.forEach(ev => {
       const opt = document.createElement('option');
@@ -182,98 +188,163 @@
     });
   }
 
-  async function loadInitial() {
+  async function loadSyncStatus() {
+    try {
+      const res = await fetch('/api/logs/sync-status', { headers: { 'Accept': 'application/json' } });
+      const json = await res.json();
+      if (json.status !== 200 || !json.data) {
+        syncStatusText.textContent = json.message || 'Status sync tidak tersedia';
+        btnSync.disabled = true;
+        return;
+      }
+      const d = json.data;
+      const parts = [
+        `Env: ${d.environment || '-'}`,
+        `Status: ${d.status || '-'}`,
+        `Last Sync: ${d.last_sync_started_at || '-'}`,
+        `Records: ${d.last_sync_records ?? 0}`,
+      ];
+      if (d.next_manual_sync_at) parts.push(`Next manual sync: ${d.next_manual_sync_at}`);
+      if (d.last_error) parts.push(`Error: ${d.last_error}`);
+      syncStatusText.textContent = parts.join(' | ');
+      btnSync.disabled = !!d.cooldown_active;
+    } catch (e) {
+      syncStatusText.textContent = 'Gagal memuat status sync';
+      btnSync.disabled = true;
+    }
+  }
+
+  function pretty(v) {
+    if (v == null) return '';
+    if (typeof v === 'string') {
+      try { return JSON.stringify(JSON.parse(v), null, 2); } catch (e) { return v; }
+    }
+    try { return JSON.stringify(v, null, 2); } catch (e) { return String(v); }
+  }
+
+  function clearDetails() {
+    detailEvent.value = '';
+    detailCreated.value = '';
+    detailRequest.value = '';
+    detailResponse.value = '';
+  }
+
+  async function loadDetail(id) {
     setLoading(true);
     try {
-      const [foldRes, evRes] = await Promise.all([
-        fetch('/api/log/folders', { headers: { 'Accept': 'application/json' } }),
-        fetch('/api/log/events', { headers: { 'Accept': 'application/json' } })
-      ]);
-      const foldJson = await foldRes.json();
-      const evJson = await evRes.json();
-      if (foldJson.status === 200) renderFolderOptions(foldJson.data);
-      if (evJson.status === 200) renderEventOptions(evJson.data);
-      updateRequestField();
-      updateSearchButton();
-    } catch (err) {
-      alert('Gagal memuat data: ' + (err.message || 'Unknown error'));
+      const res = await fetch(`/api/logs/${id}`, { headers: { 'Accept': 'application/json' } });
+      const json = await res.json();
+      if (json.status === 200 && json.data) {
+        const d = json.data;
+        detailEvent.value = d.event || '';
+        detailCreated.value = d.created_date || '';
+        detailRequest.value = pretty(d.request);
+        detailResponse.value = pretty(d.response);
+      } else {
+        alert(json.message || 'Gagal load detail');
+      }
+    } catch (e) {
+      alert('Gagal load detail: ' + (e.message || e));
     } finally {
       setLoading(false);
     }
   }
 
-  function fillDetails(r) {
-    if (!r) return;
-    detailEvent.value = r.event ?? '';
-    detailCreated.value = r.created_date ?? '';
-    let reqText = r.request ?? '';
-    try { if (typeof reqText === 'string') { reqText = JSON.stringify(JSON.parse(reqText), null, 2); } } catch (e) {}
-    detailRequest.value = reqText;
-    let respText = r.response ?? '';
-    try { if (typeof respText === 'string') { respText = JSON.stringify(JSON.parse(respText), null, 2); } } catch (e) {}
-    detailResponse.value = respText;
-  }
-
-  function renderRows(rows) {
-    tblBody.innerHTML = '';
+  function appendRows(rows, replace) {
+    if (replace) tblBody.innerHTML = '';
     (rows || []).forEach(r => {
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${r.api_request_log_id ?? ''}</td><td>${r.event ?? ''}</td><td>${r.created_date ?? ''}</td>`;
-      tr.addEventListener('dblclick', () => {
-        selectedRecordId = r.api_request_log_id ?? null;
-        fillDetails(r);
+      tr.innerHTML = `<td>${r.api_request_log_id ?? ''}</td><td>${r.event ?? r.event_slug ?? ''}</td><td>${r.reference_value ?? ''}</td><td>${r.created_date ?? ''}</td>`;
+      tr.addEventListener('click', () => {
+        [...tblBody.querySelectorAll('tr')].forEach(x => x.classList.remove('active'));
+        tr.classList.add('active');
       });
+      tr.addEventListener('dblclick', () => loadDetail(r.api_request_log_id));
       tblBody.appendChild(tr);
     });
   }
 
-  async function doSearch() {
-    const folder = ddlFolder.value;
-    const eventSlug = ddlEvent.value;
-    if (!folder || !eventSlug) {
-      alert('Pilih folder tanggal dan event terlebih dahulu.');
+  async function doSearch(append) {
+    if (!ddlEvent.value) {
+      alert('Pilih event terlebih dahulu.');
       return;
     }
-    const qReq = (searchRequest.value || '').trim();
-    const prevSelected = selectedRecordId;
+    if (!append) {
+      nextCursor = null;
+      rowsLoaded = 0;
+      clearDetails();
+    }
     setLoading(true);
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), SEARCH_TIMEOUT_MS);
     try {
-      const url = `/api/log/search?folder=${encodeURIComponent(folder)}&event=${encodeURIComponent(eventSlug)}&request=${encodeURIComponent(qReq)}&search_field=${encodeURIComponent(searchField || '')}&page=${currentPage}&per_page=${PER_PAGE}`;
-      const res = await fetch(url, { signal: controller.signal, headers: { 'Accept': 'application/json' } });
-      clearTimeout(timeoutId);
+      const params = new URLSearchParams({
+        event_slug: ddlEvent.value,
+        per_page: '50',
+      });
+      const ref = (searchRequest.value || '').trim();
+      if (ref && !searchRequest.disabled) params.set('reference_value', ref);
+      if (dateFrom.value) params.set('date_from', dateFrom.value);
+      if (dateTo.value) params.set('date_to', dateTo.value);
+      if (append && nextCursor) params.set('cursor', nextCursor);
+
+      const res = await fetch('/api/logs?' + params.toString(), { headers: { 'Accept': 'application/json' } });
       const json = await res.json();
       if (json.status === 200) {
-        currentData = (json.data || []).map((x, i) => ({ ...x, _idx: i }));
-        totalPages = json.pages || 1;
+        appendRows(json.data || [], !append);
+        rowsLoaded += (json.data || []).length;
+        nextCursor = json.next_cursor || null;
         hasMore = !!json.has_more;
-        document.getElementById('pageInfo').textContent = `Page ${json.page || 1}/${totalPages}`;
-        renderRows(currentData);
-        document.getElementById('nextPage').disabled = !hasMore;
-        if (prevSelected != null) {
-          const found = currentData.find(r => String(r.api_request_log_id) === String(prevSelected));
-          if (found) fillDetails(found);
-        }
+        btnMore.disabled = !hasMore;
+        pageInfo.textContent = hasMore
+          ? `${rowsLoaded} rows (more available)`
+          : `${rowsLoaded} rows`;
       } else {
-        alert(json.message || 'Error saat melakukan pencarian');
+        alert(json.message || 'Error search');
       }
-    } catch (error) {
-      clearTimeout(timeoutId);
-      if (error.name === 'AbortError') alert('Request timeout (90 detik). Coba lagi.');
-      else alert('Gagal terhubung: ' + (error.message || 'Failed to fetch'));
+    } catch (e) {
+      alert('Gagal search: ' + (e.message || e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function triggerSync() {
+    btnSync.disabled = true;
+    setLoading(true);
+    try {
+      const res = await fetch('/api/logs/sync', {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'X-CSRF-TOKEN': csrf,
+          'X-Requested-With': 'XMLHttpRequest'
+        }
+      });
+      const json = await res.json();
+      alert(json.message || (res.ok ? 'Sync started' : 'Sync rejected'));
+      await loadSyncStatus();
+    } catch (e) {
+      alert('Gagal sync: ' + (e.message || e));
+      await loadSyncStatus();
     } finally {
       setLoading(false);
     }
   }
 
   ddlEvent.addEventListener('change', () => { updateRequestField(); updateSearchButton(); });
-  ddlFolder.addEventListener('change', updateSearchButton);
-  btnSearch.addEventListener('click', () => { currentPage = 1; doSearch(); });
-  document.getElementById('prevPage').addEventListener('click', () => { if (currentPage > 1) { currentPage--; doSearch(); } });
-  document.getElementById('nextPage').addEventListener('click', () => { if (hasMore) { currentPage++; doSearch(); } });
+  btnSearch.addEventListener('click', () => doSearch(false));
+  btnMore.addEventListener('click', () => doSearch(true));
+  btnSync.addEventListener('click', triggerSync);
 
-  loadInitial();
+  (async function init() {
+    setLoading(true);
+    try {
+      await Promise.all([loadEvents(), loadSyncStatus()]);
+      updateRequestField();
+      updateSearchButton();
+    } finally {
+      setLoading(false);
+    }
+  })();
 })();
 </script>
 @endpush

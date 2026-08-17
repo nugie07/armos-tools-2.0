@@ -2,135 +2,107 @@
 
 namespace App\Services\Log;
 
-use Illuminate\Support\Facades\File;
-use PDO;
+use App\Repositories\Log\MonitoringLogRepository;
+use App\Repositories\Log\ProductionLogRepository;
+use App\Support\ArmosEnvironment;
+use Carbon\Carbon;
+use InvalidArgumentException;
 
+/**
+ * Read API for Log Viewer UI (listing from monitoring, detail from TMS).
+ */
 class LogViewerService
 {
-    public function baseDir(): string
-    {
-        $dir = storage_path('app/data_log');
-        File::ensureDirectoryExists($dir);
-
-        return $dir;
-    }
-
-    /**
-     * @return list<string> folder names DDMMYYYY
-     */
-    public function folders(): array
-    {
-        return collect(File::directories($this->baseDir()))
-            ->map(fn ($d) => basename($d))
-            ->filter(fn ($name) => preg_match('/^\d{8}$/', $name))
-            ->sortDesc()
-            ->values()
-            ->all();
-    }
+    public function __construct(
+        private LogEventResolver $resolver,
+        private MonitoringLogRepository $monitoring,
+        private ProductionLogRepository $production,
+    ) {}
 
     public function events(): array
     {
-        $config = config('armos_log.request_config', []);
-
-        return array_map(function ($item) use ($config) {
-            $cfg = $config[$item['slug']] ?? null;
-
-            return [
-                'slug' => $item['slug'],
-                'label' => $item['label'],
-                'request_config' => $cfg === null ? null : [
-                    'label' => $cfg['label'] ?? 'Cari Request',
-                    'placeholder' => $cfg['placeholder'] ?? 'Masukan Request',
-                    'search_field' => $cfg['search_field'] ?? null,
-                ],
-            ];
-        }, config('armos_log.event_slugs', []));
+        return $this->resolver->catalog();
     }
 
     /**
-     * Response shape compatible with Flask log_viewer.html:
-     * data (rows), page, per_page, pages, has_more
+     * @return array{data:list<array<string,mixed>>,next_cursor:?string,has_more:bool,per_page:int}
      */
     public function search(
-        string $folder,
-        string $event,
-        ?string $requestFilter = null,
-        ?string $searchField = null,
-        int $page = 1,
-        int $perPage = 15,
+        string $eventSlug,
+        ?string $referenceValue = null,
+        ?string $dateFrom = null,
+        ?string $dateTo = null,
+        ?string $cursor = null,
+        int $perPage = 50,
     ): array {
-        $page = max(1, $page);
-        $perPage = max(1, $perPage);
-
-        if ($folder === '' || $event === '') {
-            throw new \InvalidArgumentException('folder dan event wajib dipilih');
-        }
-        if (! preg_match('/^\d{8}$/', $folder)) {
-            throw new \InvalidArgumentException('invalid folder (harus DDMMYYYY)');
+        if (! $this->resolver->isValidSlug($eventSlug)) {
+            throw new InvalidArgumentException('invalid event_slug');
         }
 
-        $valid = collect(config('armos_log.event_slugs'))->pluck('slug')->all();
-        if (! in_array($event, $valid, true)) {
-            throw new \InvalidArgumentException('invalid event');
+        $environment = ArmosEnvironment::apiEnv();
+        $from = $dateFrom ? Carbon::parse($dateFrom) : null;
+        $to = $dateTo ? Carbon::parse($dateTo) : null;
+
+        $searchField = $this->resolver->searchField($eventSlug);
+        if ($searchField === null) {
+            $referenceValue = null;
         }
 
-        $dbPath = $this->baseDir().DIRECTORY_SEPARATOR.$folder.DIRECTORY_SEPARATOR.$event.'.db';
-        $baseReal = realpath($this->baseDir());
-        if (! is_file($dbPath)) {
-            return [
-                'data' => [],
-                'page' => $page,
-                'per_page' => $perPage,
-                'pages' => 0,
-                'has_more' => false,
-            ];
+        $result = $this->monitoring->search(
+            $environment,
+            $eventSlug,
+            $referenceValue !== null ? trim($referenceValue) : null,
+            $from,
+            $to,
+            $cursor,
+            $perPage,
+        );
+
+        foreach ($result['data'] as &$row) {
+            $row['event'] = $this->resolver->label($row['event_slug']);
         }
+        unset($row);
 
-        $resolved = realpath($dbPath);
-        if ($baseReal === false || $resolved === false || ! str_starts_with($resolved, $baseReal)) {
-            throw new \InvalidArgumentException('invalid path');
-        }
+        $result['per_page'] = max(1, min(100, $perPage));
 
-        $pdo = new PDO('sqlite:'.$resolved);
-        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        return $result;
+    }
 
-        $where = '1=1';
-        $bindings = [];
-        $q = trim((string) $requestFilter);
-        $field = trim((string) $searchField);
-
-        if ($q !== '' && $field !== '') {
-            $where = "LOWER(CAST(json_extract(request, ?) AS TEXT)) LIKE LOWER('%' || ? || '%')";
-            $bindings[] = '$.'.$field;
-            $bindings[] = $q;
-        } elseif ($q !== '') {
-            $where = "LOWER(CAST(request AS TEXT)) LIKE LOWER('%' || ? || '%')";
-            $bindings[] = $q;
-        }
-
-        $limitFetch = $perPage + 1;
-        $offset = ($page - 1) * $perPage;
-        $sql = "SELECT api_request_log_id, event, request, response, created_date
-FROM log
-WHERE {$where}
-ORDER BY created_date DESC
-LIMIT ? OFFSET ?";
-
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute([...$bindings, $limitFetch, $offset]);
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        $hasMore = count($rows) > $perPage;
-        if ($hasMore) {
-            $rows = array_slice($rows, 0, $perPage);
+    /**
+     * @return array<string, mixed>
+     */
+    public function detail(int $apiRequestLogId): array
+    {
+        $environment = ArmosEnvironment::apiEnv();
+        $row = $this->production->findById($environment, $apiRequestLogId);
+        if ($row === null) {
+            throw new InvalidArgumentException('Log tidak ditemukan di production.');
         }
 
         return [
-            'data' => $rows,
-            'page' => $page,
-            'per_page' => $perPage,
-            'pages' => $hasMore ? $page + 1 : $page,
-            'has_more' => $hasMore,
+            'api_request_log_id' => (int) $row['api_request_log_id'],
+            'event' => $row['event'] ?? null,
+            'request' => $this->maybeJson($row['request'] ?? null),
+            'response' => $this->maybeJson($row['response'] ?? null),
+            'created_date' => isset($row['created_date'])
+                ? Carbon::parse($row['created_date'])->toDateTimeString()
+                : null,
         ];
+    }
+
+    protected function maybeJson(mixed $value): mixed
+    {
+        if (! is_string($value)) {
+            return $value;
+        }
+        $trim = trim($value);
+        if ($trim === '') {
+            return $value;
+        }
+        try {
+            return json_decode($trim, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            return $value;
+        }
     }
 }

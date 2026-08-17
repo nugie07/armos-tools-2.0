@@ -22,7 +22,7 @@
         $endpoints = [
           'update-lokasi' => ['GET /api/orders', 'GET /api/locations', 'POST /api/orders/update-location'],
           'uncheck-reconciliation' => ['GET /api/reconciliation', 'POST /api/reconciliation/uncheck'],
-          'log-viewer' => ['GET /api/log/folders', 'GET /api/log/events', 'GET /api/log/search'],
+          'log-viewer' => ['GET /api/logs', 'GET /api/logs/{id}', 'POST /api/logs/sync', 'GET /api/logs/sync-status'],
           'product-to-route' => ['GET /api/product-to-route'],
           'wms-integrasi' => ['GET /api/wms-integration', 'POST /api/wms-integration/update'],
           'convert-send' => ['POST /api/convert-send'],

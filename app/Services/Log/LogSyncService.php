@@ -2,6 +2,7 @@
 
 namespace App\Services\Log;
 
+use App\Models\LogSyncState;
 use App\Repositories\Log\LogSyncStateRepository;
 use App\Repositories\Log\MonitoringLogRepository;
 use App\Repositories\Log\ProductionLogRepository;
@@ -21,8 +22,8 @@ class LogSyncService
 
     /**
      * @return array{
-     *   processed:int,inserted:int,invalid_json:int,unmapped_event:int,
-     *   missing_reference:int,dry_run:bool,environment:string
+     *   processed:int,inserted:int,pruned:int,invalid_json:int,unmapped_event:int,
+     *   missing_reference:int,dry_run:bool,environment:string,lookback_from:string
      * }
      */
     public function sync(string $environment, bool $dryRun = false, ?int $batchSize = null): array
@@ -33,6 +34,7 @@ class LogSyncService
 
         $batchSize = $batchSize ?? (int) config('armos_log.batch_size', 5000);
         $lockKey = (int) config('armos_log.advisory_lock_key', 8142026) + ($environment === 'prod' ? 1 : 2);
+        $lookbackFrom = $this->lookbackFrom();
 
         $locked = $this->monitoring->tryAdvisoryLock($lockKey);
         if (! $locked) {
@@ -42,11 +44,13 @@ class LogSyncService
         $stats = [
             'processed' => 0,
             'inserted' => 0,
+            'pruned' => 0,
             'invalid_json' => 0,
             'unmapped_event' => 0,
             'missing_reference' => 0,
             'dry_run' => $dryRun,
             'environment' => $environment,
+            'lookback_from' => $lookbackFrom->toDateTimeString(),
         ];
 
         try {
@@ -58,14 +62,15 @@ class LogSyncService
                 'environment' => $environment,
                 'dry_run' => $dryRun,
                 'batch_size' => $batchSize,
+                'lookback_from' => $lookbackFrom->toDateTimeString(),
             ]);
 
             $state = $this->stateRepo->getOrCreate($environment);
             $lastDate = $state->last_synced_created_date;
             $lastId = $state->last_synced_id !== null ? (int) $state->last_synced_id : null;
-            $initialFrom = null;
-            if ($lastDate === null && config('armos_log.initial_from')) {
-                $initialFrom = Carbon::parse((string) config('armos_log.initial_from'));
+            if ($lastDate === null || $lastDate->lt($lookbackFrom)) {
+                $lastDate = null;
+                $lastId = null;
             }
 
             while (true) {
@@ -74,7 +79,7 @@ class LogSyncService
                     $lastDate,
                     $lastId,
                     $batchSize,
-                    $initialFrom
+                    $lookbackFrom
                 );
 
                 if ($batch === []) {
@@ -133,6 +138,7 @@ class LogSyncService
                         $lastDate = $checkpointDate;
                         $lastId = $checkpointId;
                     }
+                    $this->stateRepo->updateProgress($environment, $stats['inserted']);
                 } else {
                     $stats['inserted'] += count($rows);
                     $lastDate = $checkpointDate;
@@ -142,6 +148,7 @@ class LogSyncService
                 Log::info('log_sync.batch_processed', [
                     'environment' => $environment,
                     'batch_count' => count($batch),
+                    'inserted' => $stats['inserted'],
                     'dry_run' => $dryRun,
                 ]);
 
@@ -151,6 +158,10 @@ class LogSyncService
             }
 
             if (! $dryRun) {
+                $stats['pruned'] = $this->monitoring->deleteOlderThan(
+                    $environment,
+                    $lookbackFrom->toDateString()
+                );
                 $this->stateRepo->markCompleted($environment, $stats['inserted']);
             }
 
@@ -172,13 +183,30 @@ class LogSyncService
     }
 
     /**
+     * Earliest created_date that may be synced (default: last 14 days).
+     */
+    public function lookbackFrom(): Carbon
+    {
+        $days = max(1, (int) config('armos_log.lookback_days', 14));
+        $lookback = now()->subDays($days)->startOfDay();
+        if (config('armos_log.initial_from')) {
+            $from = Carbon::parse((string) config('armos_log.initial_from'))->startOfDay();
+            if ($from->gt($lookback)) {
+                $lookback = $from;
+            }
+        }
+
+        return $lookback;
+    }
+
+    /**
      * Validate cooldown + not running, then return true if dispatch allowed.
      *
      * @return array{allowed:bool,message:string,status:string,next_sync_at:?string}
      */
     public function canStartManualSync(string $environment): array
     {
-        $state = $this->stateRepo->getOrCreate($environment);
+        $state = $this->recoverStaleRunning($environment);
 
         if ($state->status === 'running') {
             return [
@@ -213,7 +241,7 @@ class LogSyncService
      */
     public function statusPayload(string $environment): array
     {
-        $state = $this->stateRepo->getOrCreate($environment);
+        $state = $this->recoverStaleRunning($environment);
         $next = $this->stateRepo->nextManualSyncAt($state);
 
         return [
@@ -227,6 +255,22 @@ class LogSyncService
             'next_manual_sync_at' => optional($next)?->toDateTimeString(),
             'cooldown_active' => $this->stateRepo->isInCooldown($state) || $state->status === 'running',
             'last_error' => $state->last_error,
+            'lookback_from' => $this->lookbackFrom()->toDateTimeString(),
         ];
+    }
+
+    protected function recoverStaleRunning(string $environment): LogSyncState
+    {
+        $state = $this->stateRepo->getOrCreate($environment);
+        if ($this->stateRepo->isStaleRunning($state)) {
+            $this->stateRepo->markFailed(
+                $environment,
+                'Stale running state reset (job likely timed out while syncing historical logs).'
+            );
+
+            return $this->stateRepo->getOrCreate($environment);
+        }
+
+        return $state;
     }
 }

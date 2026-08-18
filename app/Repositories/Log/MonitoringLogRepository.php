@@ -104,6 +104,14 @@ class MonitoringLogRepository
         ];
     }
 
+    public function deleteOlderThan(string $environment, string $date): int
+    {
+        return ApiRequestLogViewer::query()
+            ->where('environment', $environment)
+            ->whereDate('created_date', '<', $date)
+            ->delete();
+    }
+
     public function tryAdvisoryLock(int $key): bool
     {
         $row = DB::selectOne('SELECT pg_try_advisory_lock(?) AS locked', [$key]);

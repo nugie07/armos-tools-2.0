@@ -45,6 +45,24 @@ class LogSyncStateRepository
         return $state->fresh();
     }
 
+    public function updateProgress(string $environment, int $records): void
+    {
+        $state = $this->getOrCreate($environment);
+        $state->last_sync_records = $records;
+        $state->save();
+    }
+
+    public function isStaleRunning(LogSyncState $state): bool
+    {
+        if ($state->status !== 'running' || $state->last_sync_started_at === null) {
+            return false;
+        }
+
+        $minutes = max(5, (int) config('armos_log.stale_running_minutes', 70));
+
+        return $state->last_sync_started_at->lte(now()->subMinutes($minutes));
+    }
+
     public function markFailed(string $environment, string $error): LogSyncState
     {
         $state = $this->getOrCreate($environment);

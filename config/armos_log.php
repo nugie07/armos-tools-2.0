@@ -20,10 +20,19 @@ return [
     'schedule_hours' => (int) env('LOG_SYNC_SCHEDULE_HOURS', 3),
 
     /**
-     * Optional lower bound for first sync when checkpoint is empty.
-     * Format: Y-m-d or Y-m-d H:i:s. Null = from earliest rows (batched).
+     * Only sync / keep monitoring rows within this many days.
+     */
+    'lookback_days' => (int) env('LOG_SYNC_LOOKBACK_DAYS', 14),
+
+    /**
+     * Optional extra lower bound (Y-m-d). Combined with lookback (the later date wins).
      */
     'initial_from' => env('LOG_SYNC_INITIAL_FROM'),
+
+    /**
+     * If status stays "running" longer than this, treat the job as dead and allow retry.
+     */
+    'stale_running_minutes' => (int) env('LOG_SYNC_STALE_RUNNING_MINUTES', 70),
 
     'production_table' => env('LOG_SYNC_PRODUCTION_TABLE', 'sys_api_request_log'),
 

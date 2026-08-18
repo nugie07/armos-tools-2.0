@@ -206,6 +206,7 @@
         `Last Sync: ${d.last_sync_started_at || '-'}`,
         `Records: ${d.last_sync_records ?? 0}`,
       ];
+      if (d.lookback_from) parts.push(`From: ${d.lookback_from}`);
       if (d.next_manual_sync_at) parts.push(`Next manual sync: ${d.next_manual_sync_at}`);
       if (d.last_error) parts.push(`Error: ${d.last_error}`);
       syncStatusText.textContent = parts.join(' | ');

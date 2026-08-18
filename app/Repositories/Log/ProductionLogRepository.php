@@ -14,7 +14,7 @@ class ProductionLogRepository
     }
 
     /**
-     * Incremental read from TMS sys_api_request_log.
+     * Incremental read from TMS sys_api_request_log, never older than $lookbackFrom.
      *
      * @return list<array<string, mixed>>
      */
@@ -23,23 +23,20 @@ class ProductionLogRepository
         ?CarbonInterface $lastSyncedCreatedDate,
         ?int $lastSyncedId,
         int $batchSize,
-        ?CarbonInterface $initialFrom = null,
+        CarbonInterface $lookbackFrom,
     ): array {
         $conn = $this->connectionName($environment);
         $table = config('armos_log.production_table', 'sys_api_request_log');
 
-        $bindings = [];
-        $where = '1=1';
+        $bindings = [$lookbackFrom->format('Y-m-d H:i:s')];
+        $where = 'created_date >= ?';
 
-        if ($lastSyncedCreatedDate !== null) {
-            $where = '(created_date > ? OR (created_date = ? AND api_request_log_id > ?))';
+        if ($lastSyncedCreatedDate !== null && $lastSyncedCreatedDate->gte($lookbackFrom)) {
+            $where .= ' AND (created_date > ? OR (created_date = ? AND api_request_log_id > ?))';
             $ts = $lastSyncedCreatedDate->format('Y-m-d H:i:s.u');
             $bindings[] = $ts;
             $bindings[] = $ts;
             $bindings[] = (int) ($lastSyncedId ?? 0);
-        } elseif ($initialFrom !== null) {
-            $where = 'created_date >= ?';
-            $bindings[] = $initialFrom->format('Y-m-d H:i:s');
         }
 
         $bindings[] = $batchSize;

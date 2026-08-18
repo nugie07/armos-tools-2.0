@@ -4,7 +4,7 @@
 
 - **Listing/search** → `monitoring.api_request_log_viewer` (app DB `armos_tools`)
 - **Detail request/response** → TMS `sys_api_request_log` by `api_request_log_id` only
-- **Sync** → incremental checkpoint (`last_synced_created_date` + `last_synced_id`), batch 5000
+- **Sync** → incremental checkpoint (`last_synced_created_date` + `last_synced_id`), batch 5000, **hanya 14 hari terakhir**
 - **Schedule** → setiap 3 jam (prod + preprod)
 - **Manual sync** → `POST /api/logs/sync`, cooldown 1 jam (backend enforced)
 
@@ -23,7 +23,9 @@ LOG_SYNC_ENABLED=true
 LOG_SYNC_BATCH_SIZE=5000
 LOG_SYNC_MANUAL_COOLDOWN_MINUTES=60
 LOG_SYNC_SCHEDULE_HOURS=3
-LOG_SYNC_INITIAL_FROM=          # optional Y-m-d for first sync lower bound
+LOG_SYNC_LOOKBACK_DAYS=14
+LOG_SYNC_INITIAL_FROM=          # optional extra lower bound (later than lookback wins)
+LOG_SYNC_STALE_RUNNING_MINUTES=70
 LOG_SYNC_PRODUCTION_TABLE=sys_api_request_log
 LOG_SYNC_ADVISORY_LOCK_KEY=8142026
 ```
@@ -54,7 +56,7 @@ Tidak mengubah TMS/production table.
 2. Queue worker:
 
 ```bash
-php artisan queue:work database --sleep=1 --tries=1
+php artisan queue:work database --sleep=1 --tries=1 --timeout=3600
 ```
 
 (atau supervisor/systemd). Tanpa worker, manual sync hanya dispatch job dan tidak jalan.
@@ -74,11 +76,7 @@ php artisan logs:sync --env=prod --batch-size=5000
 php artisan logs:sync --env=prod --queue
 ```
 
-Opsional batas awal:
-
-```bash
-php artisan logs:sync --env=prod --from=2026-01-01
-```
+Default hanya log **14 hari terakhir**. `--from=` hanya mempersempit window (tanggal lebih baru dari lookback).
 
 Ulangi untuk `--env=preprod` bila perlu.
 

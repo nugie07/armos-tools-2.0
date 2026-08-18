@@ -71,7 +71,7 @@
         </div>
       </div>
     </div>
-    <small class="text-muted">Listing dari monitoring index. Double-klik baris untuk load detail (request/response) dari production by ID.</small>
+    <small class="text-muted">Filter tanggal memakai kolom <code>created_date</code> (tanggal log dibuat di TMS), inclusive per hari kalender. Double-klik baris untuk load detail (request/response) dari production by ID.</small>
   </div>
 </div>
 
@@ -90,8 +90,9 @@
     </table>
   </div>
   <div class="card-footer d-flex align-items-center">
-    <button id="btnMore" type="button" class="btn btn-outline-secondary btn-sm" disabled>Load more</button>
+    <button id="btnPrev" type="button" class="btn btn-outline-secondary btn-sm" disabled>Prev</button>
     <span id="pageInfo" class="small text-muted mx-2"></span>
+    <button id="btnNext" type="button" class="btn btn-outline-secondary btn-sm" disabled>Next</button>
   </div>
 </div>
 
@@ -139,7 +140,8 @@
   const dateFrom = document.getElementById('dateFrom');
   const dateTo = document.getElementById('dateTo');
   const btnSearch = document.getElementById('btnSearch');
-  const btnMore = document.getElementById('btnMore');
+  const btnPrev = document.getElementById('btnPrev');
+  const btnNext = document.getElementById('btnNext');
   const btnSync = document.getElementById('btnSync');
   const syncStatusText = document.getElementById('syncStatusText');
   const tblBody = document.querySelector('#tblLogs tbody');
@@ -150,9 +152,9 @@
   const detailResponse = document.getElementById('detailResponse');
 
   let eventOptions = [];
-  let nextCursor = null;
-  let hasMore = false;
-  let rowsLoaded = 0;
+  let currentPage = 1;
+  let lastPage = 1;
+  const perPage = 15;
 
   function setLoading(on) { loadingOverlay.classList.toggle('d-none', !on); }
 
@@ -264,39 +266,44 @@
     });
   }
 
-  async function doSearch(append) {
+  function updatePager() {
+    btnPrev.disabled = currentPage <= 1;
+    btnNext.disabled = currentPage >= lastPage;
+  }
+
+  async function doSearch(page) {
     if (!ddlEvent.value) {
       alert('Pilih event terlebih dahulu.');
       return;
     }
-    if (!append) {
-      nextCursor = null;
-      rowsLoaded = 0;
-      clearDetails();
-    }
+    currentPage = page || 1;
+    clearDetails();
     setLoading(true);
     try {
       const params = new URLSearchParams({
         event_slug: ddlEvent.value,
-        per_page: '50',
+        page: String(currentPage),
+        per_page: String(perPage),
       });
       const ref = (searchRequest.value || '').trim();
       if (ref && !searchRequest.disabled) params.set('reference_value', ref);
       if (dateFrom.value) params.set('date_from', dateFrom.value);
       if (dateTo.value) params.set('date_to', dateTo.value);
-      if (append && nextCursor) params.set('cursor', nextCursor);
 
       const res = await fetch('/api/logs?' + params.toString(), { headers: { 'Accept': 'application/json' } });
       const json = await res.json();
       if (json.status === 200) {
-        appendRows(json.data || [], !append);
-        rowsLoaded += (json.data || []).length;
-        nextCursor = json.next_cursor || null;
-        hasMore = !!json.has_more;
-        btnMore.disabled = !hasMore;
-        pageInfo.textContent = hasMore
-          ? `${rowsLoaded} rows (more available)`
-          : `${rowsLoaded} rows`;
+        appendRows(json.data || [], true);
+        currentPage = json.current_page || 1;
+        lastPage = json.last_page || 1;
+        const total = json.total ?? 0;
+        const shown = (json.data || []).length;
+        const from = total === 0 ? 0 : ((currentPage - 1) * perPage) + 1;
+        const to = total === 0 ? 0 : ((currentPage - 1) * perPage) + shown;
+        pageInfo.textContent = total === 0
+          ? '0 rows'
+          : `${from}–${to} of ${total} · page ${currentPage}/${lastPage}`;
+        updatePager();
       } else {
         alert(json.message || 'Error search');
       }
@@ -331,8 +338,9 @@
   }
 
   ddlEvent.addEventListener('change', () => { updateRequestField(); updateSearchButton(); });
-  btnSearch.addEventListener('click', () => doSearch(false));
-  btnMore.addEventListener('click', () => doSearch(true));
+  btnSearch.addEventListener('click', () => doSearch(1));
+  btnPrev.addEventListener('click', () => { if (currentPage > 1) doSearch(currentPage - 1); });
+  btnNext.addEventListener('click', () => { if (currentPage < lastPage) doSearch(currentPage + 1); });
   btnSync.addEventListener('click', triggerSync);
 
   (async function init() {

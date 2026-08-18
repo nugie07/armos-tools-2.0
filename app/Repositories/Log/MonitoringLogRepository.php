@@ -3,7 +3,6 @@
 namespace App\Repositories\Log;
 
 use App\Models\ApiRequestLogViewer;
-use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
 
 class MonitoringLogRepository
@@ -32,20 +31,29 @@ class MonitoringLogRepository
     }
 
     /**
-     * Cursor/keyset pagination on monitoring index.
+     * Offset pagination on monitoring index.
+     * Date filters compare the calendar date of created_date (inclusive).
      *
-     * @return array{data:list<array<string,mixed>>,next_cursor:?string,has_more:bool}
+     * @return array{
+     *   data:list<array<string,mixed>>,
+     *   current_page:int,
+     *   last_page:int,
+     *   per_page:int,
+     *   total:int
+     * }
      */
     public function search(
         string $environment,
         string $eventSlug,
         ?string $referenceValue,
-        ?CarbonInterface $dateFrom,
-        ?CarbonInterface $dateTo,
-        ?string $cursor,
+        ?string $dateFrom,
+        ?string $dateTo,
+        int $page,
         int $perPage,
     ): array {
         $perPage = max(1, min(100, $perPage));
+        $page = max(1, $page);
+
         $query = ApiRequestLogViewer::query()
             ->where('environment', $environment)
             ->where('event_slug', $eventSlug);
@@ -53,41 +61,32 @@ class MonitoringLogRepository
         if ($referenceValue !== null && $referenceValue !== '') {
             $query->where('reference_value', $referenceValue);
         }
-        if ($dateFrom !== null) {
-            $query->where('created_date', '>=', $dateFrom->startOfDay());
+        // Calendar-day filter on stored created_date (TMS log created_date).
+        // Use DATE() so timezone-shifted startOfDay/endOfDay cannot drop a whole day.
+        if ($dateFrom !== null && $dateFrom !== '') {
+            $query->whereDate('created_date', '>=', $dateFrom);
         }
-        if ($dateTo !== null) {
-            $query->where('created_date', '<=', $dateTo->endOfDay());
+        if ($dateTo !== null && $dateTo !== '') {
+            $query->whereDate('created_date', '<=', $dateTo);
         }
 
-        if ($cursor) {
-            $decoded = $this->decodeCursor($cursor);
-            if ($decoded !== null) {
-                $query->where(function ($q) use ($decoded) {
-                    $q->where('created_date', '<', $decoded['created_date'])
-                        ->orWhere(function ($q2) use ($decoded) {
-                            $q2->where('created_date', '=', $decoded['created_date'])
-                                ->where('api_request_log_id', '<', $decoded['api_request_log_id']);
-                        });
-                });
-            }
+        $total = (clone $query)->count();
+        $lastPage = max(1, (int) ceil($total / $perPage));
+        if ($page > $lastPage) {
+            $page = $lastPage;
         }
 
         $rows = $query
             ->orderByDesc('created_date')
             ->orderByDesc('api_request_log_id')
-            ->limit($perPage + 1)
+            ->offset(($page - 1) * $perPage)
+            ->limit($perPage)
             ->get([
                 'api_request_log_id',
                 'event_slug',
                 'reference_value',
                 'created_date',
             ]);
-
-        $hasMore = $rows->count() > $perPage;
-        if ($hasMore) {
-            $rows = $rows->take($perPage);
-        }
 
         $data = $rows->map(fn ($r) => [
             'api_request_log_id' => (int) $r->api_request_log_id,
@@ -96,44 +95,12 @@ class MonitoringLogRepository
             'created_date' => optional($r->created_date)?->toDateTimeString(),
         ])->values()->all();
 
-        $nextCursor = null;
-        if ($hasMore && $data !== []) {
-            $last = $rows->last();
-            $nextCursor = $this->encodeCursor(
-                (string) optional($last->created_date)?->format('Y-m-d H:i:s.u'),
-                (int) $last->api_request_log_id
-            );
-        }
-
         return [
             'data' => $data,
-            'next_cursor' => $nextCursor,
-            'has_more' => $hasMore,
-        ];
-    }
-
-    protected function encodeCursor(string $createdDate, int $id): string
-    {
-        return rtrim(strtr(base64_encode($createdDate.'|'.$id), '+/', '-_'), '=');
-    }
-
-    /**
-     * @return array{created_date:string,api_request_log_id:int}|null
-     */
-    protected function decodeCursor(string $cursor): ?array
-    {
-        $raw = base64_decode(strtr($cursor, '-_', '+/'), true);
-        if ($raw === false || ! str_contains($raw, '|')) {
-            return null;
-        }
-        [$date, $id] = explode('|', $raw, 2);
-        if ($date === '' || ! ctype_digit((string) $id)) {
-            return null;
-        }
-
-        return [
-            'created_date' => $date,
-            'api_request_log_id' => (int) $id,
+            'current_page' => $page,
+            'last_page' => $lastPage,
+            'per_page' => $perPage,
+            'total' => $total,
         ];
     }
 

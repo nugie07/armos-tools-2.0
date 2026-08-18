@@ -33,8 +33,8 @@ class LogViewerController extends Controller
                 referenceValue: $request->query('reference_value', $request->query('request')),
                 dateFrom: $request->query('date_from'),
                 dateTo: $request->query('date_to'),
-                cursor: $request->query('cursor'),
-                perPage: (int) $request->query('per_page', $request->query('limit', 50)),
+                page: (int) $request->query('page', 1),
+                perPage: (int) $request->query('per_page', 15),
             );
 
             return response()->json(array_merge([

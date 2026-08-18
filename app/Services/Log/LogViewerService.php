@@ -25,23 +25,27 @@ class LogViewerService
     }
 
     /**
-     * @return array{data:list<array<string,mixed>>,next_cursor:?string,has_more:bool,per_page:int}
+     * @return array{
+     *   data:list<array<string,mixed>>,
+     *   current_page:int,
+     *   last_page:int,
+     *   per_page:int,
+     *   total:int
+     * }
      */
     public function search(
         string $eventSlug,
         ?string $referenceValue = null,
         ?string $dateFrom = null,
         ?string $dateTo = null,
-        ?string $cursor = null,
-        int $perPage = 50,
+        int $page = 1,
+        int $perPage = 15,
     ): array {
         if (! $this->resolver->isValidSlug($eventSlug)) {
             throw new InvalidArgumentException('invalid event_slug');
         }
 
         $environment = ArmosEnvironment::apiEnv();
-        $from = $dateFrom ? Carbon::parse($dateFrom) : null;
-        $to = $dateTo ? Carbon::parse($dateTo) : null;
 
         $searchField = $this->resolver->searchField($eventSlug);
         if ($searchField === null) {
@@ -52,9 +56,9 @@ class LogViewerService
             $environment,
             $eventSlug,
             $referenceValue !== null ? trim($referenceValue) : null,
-            $from,
-            $to,
-            $cursor,
+            $this->normalizeDate($dateFrom),
+            $this->normalizeDate($dateTo),
+            $page,
             $perPage,
         );
 
@@ -63,9 +67,19 @@ class LogViewerService
         }
         unset($row);
 
-        $result['per_page'] = max(1, min(100, $perPage));
-
         return $result;
+    }
+
+    /**
+     * Date picker values (Y-m-d) compared as calendar days of created_date.
+     */
+    protected function normalizeDate(?string $value): ?string
+    {
+        if ($value === null || trim($value) === '') {
+            return null;
+        }
+
+        return Carbon::parse(trim($value), config('app.timezone'))->toDateString();
     }
 
     /**

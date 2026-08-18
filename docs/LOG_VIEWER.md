@@ -87,12 +87,12 @@ Ulangi untuk `--env=preprod` bila perlu.
 | Method | Path | Keterangan |
 |--------|------|------------|
 | GET | `/api/logs/events` | Catalog event + search field |
-| GET | `/api/logs` | List/search monitoring (cursor) |
+| GET | `/api/logs` | List/search monitoring (page) |
 | GET | `/api/logs/{id}` | Detail 1 row dari TMS |
 | GET | `/api/logs/sync-status` | Status + cooldown |
 | POST | `/api/logs/sync` | Trigger manual sync job |
 
-Query list: `event_slug`, `reference_value` (exact), `date_from`, `date_to`, `cursor`, `per_page`.
+Query list: `event_slug`, `reference_value` (exact), `date_from`, `date_to` (calendar day of `created_date`, inclusive), `page`, `per_page` (default 15).
 
 Auth: session login + middleware `armos.env` (wajib pilih Production / Pre Production di navbar).
 
